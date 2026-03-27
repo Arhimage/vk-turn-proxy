@@ -56,7 +56,11 @@ func getVkCreds(link string) (string, string, string, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer httpResp.Body.Close()
+		defer func() {
+			if closeErr := httpResp.Body.Close(); closeErr != nil {
+				log.Printf("failed to close response body: %v", closeErr)
+			}
+		}()
 
 		body, err := io.ReadAll(httpResp.Body)
 		if err != nil {
@@ -287,7 +291,11 @@ func getYandexCreds(link string) (string, string, string, error) {
 	if err != nil {
 		return "", "", "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Printf("failed to close conference response body: %v", closeErr)
+		}
+	}()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return "", "", "", fmt.Errorf("GetConference: status=%s body=%s", resp.Status, string(body))
@@ -315,7 +323,11 @@ func getYandexCreds(link string) (string, string, string, error) {
 	if err != nil {
 		return "", "", "", fmt.Errorf("ws dial: %w", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			log.Printf("failed to close websocket connection: %v", closeErr)
+		}
+	}()
 
 	req1 := HelloRequest{
 		UID: uuid.New().String(),
@@ -387,7 +399,9 @@ func getYandexCreds(link string) (string, string, string, error) {
 		return "", "", "", fmt.Errorf("ws write: %w", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
+		return "", "", "", fmt.Errorf("ws set read deadline: %w", err)
+	}
 
 	for {
 		_, msg, err := conn.ReadMessage()
@@ -495,8 +509,12 @@ func oneDtlsConnection(ctx context.Context, peer *net.UDPAddr, listenConn net.Pa
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	context.AfterFunc(dtlsctx, func() {
-		listenConn.SetDeadline(time.Now())
-		dtlsConn.SetDeadline(time.Now())
+		if err := listenConn.SetDeadline(time.Now()); err != nil {
+			log.Printf("failed to set listener deadline: %v", err)
+		}
+		if err := dtlsConn.SetDeadline(time.Now()); err != nil {
+			log.Printf("failed to set DTLS deadline: %v", err)
+		}
 	})
 	var addr atomic.Value
 	// Start read-loop on listenConn
@@ -557,8 +575,12 @@ func oneDtlsConnection(ctx context.Context, peer *net.UDPAddr, listenConn net.Pa
 	}()
 
 	wg.Wait()
-	listenConn.SetDeadline(time.Time{})
-	dtlsConn.SetDeadline(time.Time{})
+	if err := listenConn.SetDeadline(time.Time{}); err != nil {
+		log.Printf("failed to clear listener deadline: %v", err)
+	}
+	if err := dtlsConn.SetDeadline(time.Time{}); err != nil {
+		log.Printf("failed to clear DTLS deadline: %v", err)
+	}
 }
 
 type connectedUDPConn struct {
@@ -692,8 +714,12 @@ func oneTurnConnection(ctx context.Context, turnParams *turnParams, peer *net.UD
 	wg.Add(2)
 	turnctx, turncancel := context.WithCancel(context.Background())
 	context.AfterFunc(turnctx, func() {
-		relayConn.SetDeadline(time.Now())
-		conn2.SetDeadline(time.Now())
+		if err := relayConn.SetDeadline(time.Now()); err != nil {
+			log.Printf("failed to set relay deadline: %v", err)
+		}
+		if err := conn2.SetDeadline(time.Now()); err != nil {
+			log.Printf("failed to set TURN pipe deadline: %v", err)
+		}
 	})
 	var addr atomic.Value
 	// Start read-loop on conn2 (output of DTLS)
@@ -754,8 +780,12 @@ func oneTurnConnection(ctx context.Context, turnParams *turnParams, peer *net.UD
 	}()
 
 	wg.Wait()
-	relayConn.SetDeadline(time.Time{})
-	conn2.SetDeadline(time.Time{})
+	if err := relayConn.SetDeadline(time.Time{}); err != nil {
+		log.Printf("failed to clear relay deadline: %v", err)
+	}
+	if err := conn2.SetDeadline(time.Time{}); err != nil {
+		log.Printf("failed to clear TURN pipe deadline: %v", err)
+	}
 }
 
 func oneDtlsConnectionLoop(ctx context.Context, peer *net.UDPAddr, listenConnChan <-chan net.PacketConn, connchan chan<- net.PacketConn, okchan chan<- struct{}) {
