@@ -1,0 +1,11 @@
+.git
+.github
+dist
+bin
+*.exe
+*.log
+README.md
+LICENSE
+routes.sh
+routes.ps1
+routes-macos.sh
